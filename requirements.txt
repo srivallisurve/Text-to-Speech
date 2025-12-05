@@ -1,5 +1,2 @@
-
 gradio
-transformers
-torch
-soundfile
+gTTS
