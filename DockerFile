@@ -1,22 +1,18 @@
 # Start from a clean, lightweight Python image
-# We use 3.10 as it's a stable, modern version
 FROM python:3.10-slim
 
 # Set the working directory inside the container
 WORKDIR /app
 
-# Copy the requirements file and install dependencies
-# This is a key step as it pulls in transformers, torch, gradio, etc.
+# Copy the requirements file and install dependencies (now much faster!)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your application code (including app.py)
+# Copy the rest of your application code (app.py)
 COPY . .
 
 # Expose the port that Gradio runs on (default is 7860)
-# Render or your cloud service will route external traffic to this port
 EXPOSE 7860
 
-# Define the command to run the application when the container starts
-# The server_name='0.0.0.0' is CRUCIAL for external access in a container environment
-CMD ["python", "app.py"]
+# Define the command to run the application using the absolute path
+CMD ["python", "/app/app.py"]
