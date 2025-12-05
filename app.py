@@ -1,107 +1,62 @@
-import streamlit as st
-from gtts import gTTS
-from io import BytesIO
-import re
+import gradio as gr
+from transformers import VitsModel, AutoTokenizer
+import torch
+import soundfile as sf
+import os
+import tempfile # <--- New import!
 
-# --- 1. Text Normalization Function (NLP Component) ---
+# --- Model Loading ---
+MODEL_ID = "facebook/mms-tts-eng"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def normalize_text(text):
-    """
-    Performs basic text normalization to improve TTS pronunciation.
-    - Expands common abbreviations.
-    - Handles currency symbols.
-    """
-    # Simple abbreviation dictionary
-    abbreviations = {
-        "Mr.": "Mister",
-        "Dr.": "Doctor",
-        "Vs.": "Versus",
-        "Mrs.": "Missus",
-        "e.g.": "for example",
-    }
+try:
+    model = VitsModel.from_pretrained(MODEL_ID).to(device)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+except Exception as e:
+    print(f"Error loading model: {e}")
+    model, tokenizer = None, None
+
+# --- TTS Function ---
+def text_to_speech(text):
+    """Generates audio from input text using the loaded model."""
+    if model is None or tokenizer is None:
+        return None, "Error: Model failed to load."
+
+    # 1. Tokenize the input text
+    inputs = tokenizer(text, return_tensors="pt").to(device)
+
+    # 2. Generate the audio
+    with torch.no_grad():
+        output = model(**inputs)
+
+    audio_data = output.waveform.cpu().numpy().squeeze()
+    sampling_rate = model.config.sampling_rate
+
+    # 3. Save the audio to a unique temporary file <--- THE KEY CHANGE
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        audio_path = tmp.name
     
-    # 1. Expand abbreviations
-    for abbr, full in abbreviations.items():
-        text = text.replace(abbr, full)
+    sf.write(audio_path, audio_data, sampling_rate)
 
-    # 2. Handle currency (simple replacement for $ to dollars)
-    text = re.sub(r'\$(\d+)', r'\1 dollars', text)
-    
-    # You can add more rules here (e.g., handling dates, percentages)
-    return text
+    # Gradio will read the audio from this path and handle the cleanup!
+    return audio_path, "Success! Audio generated."
 
-# --- 2. Core TTS Function ---
-
-def text_to_audio(text, lang='en'):
-    """
-    Converts text to an MP3 audio stream using gTTS.
-    """
-    # Create an in-memory byte stream to store the MP3 data
-    mp3_fp = BytesIO() 
-    
-    try:
-        # Create the gTTS object
-        tts = gTTS(text=text, lang=lang, slow=False)
-        
-        # Write the audio data to the byte stream
-        tts.write_to_fp(mp3_fp)
-        
-        # Reset stream position to the beginning before returning
-        mp3_fp.seek(0)
-        return mp3_fp
-    
-    except Exception as e:
-        st.error(f"An error occurred during speech generation: {e}")
-        return None
-
-# --- 3. Streamlit UI (The Web Application) ---
-
-st.set_page_config(page_title="Custom TTS Reader", layout="centered")
-
-st.title("🎙️ Custom Text-to-Speech Generator")
-st.markdown("Enter text below, select a language, and generate the audio. The text is processed for better pronunciation!")
-
-# Input Text Area
-input_text = st.text_area(
-    "Enter the text you want to convert to speech:", 
-    "Dr. Smith said the new phone costs $850. The battery life is great, Vs. the old model."
+# --- Gradio Interface ---
+iface = gr.Interface(
+    fn=text_to_speech,
+    inputs=gr.Textbox(
+        lines=5,
+        placeholder="Enter text here...",
+        label="Input Text for TTS"
+    ),
+    outputs=[
+        gr.Audio(type="filepath", label="Generated Audio"),
+        gr.Text(label="Status")
+    ],
+    title="Hugging Face TTS Deployment Example 🗣️",
+    description=f"A simple Text-to-Speech application using the **{MODEL_ID}** model."
 )
 
-# Language Selector
-lang_options = {
-    "English (en)": "en",
-    "Spanish (es)": "es",
-    "French (fr)": "fr",
-    "Hindi (hi)": "hi",
-}
-selected_lang_name = st.selectbox("Select Language:", list(lang_options.keys()))
-selected_lang_code = lang_options[selected_lang_name]
-
-# Generate Button
-if st.button("Generate Speech 🔊"):
-    if input_text:
-        with st.spinner("Generating audio..."):
-            
-            # 1. NLP Step: Normalize the text
-            processed_text = normalize_text(input_text)
-            st.info(f"**Processed Text (Normalization Applied):** {processed_text}")
-
-            # 2. TTS Step: Convert to audio
-            audio_stream = text_to_audio(processed_text, selected_lang_code)
-
-            if audio_stream:
-                # 3. Streamlit Step: Display the audio player
-                st.audio(audio_stream, format='audio/mp3')
-
-                # 4. Streamlit Step: Provide a download button
-                st.download_button(
-                    label="Download MP3",
-                    data=audio_stream,
-                    file_name="generated_speech.mp3",
-                    mime="audio/mp3"
-                )
-    else:
-        st.warning("Please enter some text to generate speech.")
-
-st.markdown("---")
-st.caption("Project demonstrating NLP (Normalization) and Sequence-to-Sequence (gTTS API) capabilities.")
+if __name__ == "__main__":
+    # Ensure this launch line is still present for container deployment!
+    iface.launch(server_name='0.0.0.0', server_port=7860)
