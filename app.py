@@ -37,8 +37,10 @@ iface = gr.Interface(
             label="Input Text for gTTS"
         ),
         gr.Dropdown(
-            choices=['en', 'es', 'fr', 'de'], # Simple selection of popular languages
-            label="Select Language (ISO 639-1 code)",
+            choices=[
+                'en', 'es', 'fr', 'de', 'ja', 'ko', 'ru', 'pt-br', 'zh-CN', 'it', 'hi', 'ar'
+            ],
+            label="Select Language (IETF Code)",
             value='en'
         )
     ],
