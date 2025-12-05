@@ -1,62 +1,55 @@
 import gradio as gr
-from transformers import VitsModel, AutoTokenizer
-import torch
-import soundfile as sf
+from gtts import gTTS
+import tempfile
 import os
-import tempfile # <--- New import!
-
-# --- Model Loading ---
-MODEL_ID = "facebook/mms-tts-eng"
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-try:
-    model = VitsModel.from_pretrained(MODEL_ID).to(device)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-except Exception as e:
-    print(f"Error loading model: {e}")
-    model, tokenizer = None, None
 
 # --- TTS Function ---
-def text_to_speech(text):
-    """Generates audio from input text using the loaded model."""
-    if model is None or tokenizer is None:
-        return None, "Error: Model failed to load."
-
-    # 1. Tokenize the input text
-    inputs = tokenizer(text, return_tensors="pt").to(device)
-
-    # 2. Generate the audio
-    with torch.no_grad():
-        output = model(**inputs)
-
-    audio_data = output.waveform.cpu().numpy().squeeze()
-    sampling_rate = model.config.sampling_rate
-
-    # 3. Save the audio to a unique temporary file <--- THE KEY CHANGE
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        audio_path = tmp.name
+def text_to_speech_gtts(text, language='en'):
+    """Generates audio from input text using gTTS and saves it to a temp file."""
     
-    sf.write(audio_path, audio_data, sampling_rate)
+    if not text:
+        return None, "Error: Please enter text."
 
-    # Gradio will read the audio from this path and handle the cleanup!
-    return audio_path, "Success! Audio generated."
+    try:
+        # Create a gTTS object
+        tts = gTTS(text=text, lang=language)
+        
+        # Use a temporary file to save the mp3 output
+        # Gradio will read from this path and handle cleanup
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            audio_path = tmp.name
+        
+        # Save the audio stream to the temporary file
+        tts.save(audio_path)
+        
+        return audio_path, "Success! Audio generated using gTTS."
+
+    except Exception as e:
+        return None, f"An error occurred: {e}"
 
 # --- Gradio Interface ---
 iface = gr.Interface(
-    fn=text_to_speech,
-    inputs=gr.Textbox(
-        lines=5,
-        placeholder="Enter text here...",
-        label="Input Text for TTS"
-    ),
+    fn=text_to_speech_gtts,
+    inputs=[
+        gr.Textbox(
+            lines=5, 
+            placeholder="Enter text here...",
+            label="Input Text for gTTS"
+        ),
+        gr.Dropdown(
+            choices=['en', 'es', 'fr', 'de'], # Simple selection of popular languages
+            label="Select Language (ISO 639-1 code)",
+            value='en'
+        )
+    ],
     outputs=[
         gr.Audio(type="filepath", label="Generated Audio"),
         gr.Text(label="Status")
     ],
-    title="Hugging Face TTS Deployment Example 🗣️",
-    description=f"A simple Text-to-Speech application using the **{MODEL_ID}** model."
+    title="gTTS Text-to-Speech Deployment 🗣️",
+    description="A simple Text-to-Speech application using the gTTS library."
 )
 
 if __name__ == "__main__":
-    # Ensure this launch line is still present for container deployment!
+    # Crucial for container deployment!
     iface.launch(server_name='0.0.0.0', server_port=7860)
