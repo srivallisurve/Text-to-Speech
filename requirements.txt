@@ -1,2 +1,6 @@
 streamlit
 gTTS
+gradio
+transformers
+torch
+soundfile
